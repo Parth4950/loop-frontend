@@ -1,26 +1,112 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ------------------------------------------------------------------ *
+ * Loop design tokens — the only colors, type, radii and shadows
+ * the product is allowed to use. Surfaced as Tailwind utilities via
+ * @theme (e.g. bg-canvas, text-ink, border-line, font-display,
+ * rounded-card, shadow-soft, bg-delivered/10).
+ * ------------------------------------------------------------------ */
+@theme {
+  /* Surfaces & ink */
+  --color-canvas: #fbfaf8;
+  --color-surface: #ffffff;
+  --color-ink: #1a1714;
+  --color-muted: #6f6a63;
+  --color-line: #eae6e0;
+
+  /* The signature live accent — gold. Used ONLY for live / thinking /
+     active state and nothing else. */
+  --color-live: #b7791f;
+  --color-live-wash: #f4ecdc;
+
+  /* Message lifecycle status */
+  --color-queued: #a8a29e;
+  --color-sent: #64748b;
+  --color-delivered: #2563eb;
+  --color-opened: #7c3aed;
+  --color-clicked: #059669;
+  --color-converted: #d97706;
+  --color-failed: #dc2626;
+  --color-retrying: #f59e0b;
+
+  /* Type — wired to next/font CSS variables set on <html> */
+  --font-display: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+  --font-body: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SF Mono", monospace;
+
+  /* Radii */
+  --radius-card: 20px;
+  --radius-control: 12px;
+
+  /* Soft, layered, low-opacity shadow */
+  --shadow-soft: 0 1px 2px rgba(26, 23, 20, 0.04),
+    0 10px 30px -16px rgba(26, 23, 20, 0.14);
+  --shadow-lift: 0 1px 2px rgba(26, 23, 20, 0.05),
+    0 18px 44px -20px rgba(26, 23, 20, 0.2);
+
+  /* Live halo pulse */
+  --animate-halo: halo 2.4s ease-out infinite;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+@layer base {
+  html {
+    font-family: var(--font-body);
+    text-rendering: optimizeLegibility;
+  }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background-color: var(--color-live-wash);
+    color: var(--color-ink);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* A quiet left-to-right sweep for skeleton/loading rows. */
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.shimmer {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-line) 0%,
+    var(--color-canvas) 50%,
+    var(--color-line) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* The gold halo behind a LivePulse dot. */
+@keyframes halo {
+  0% {
+    transform: scale(1);
+    opacity: 0.45;
+  }
+  70%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }
