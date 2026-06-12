@@ -1,13 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, MotionConfig, motion } from "framer-motion";
 import {
+  explainCustomer,
   runAgent,
   sendCampaign,
   simulate,
+  type AudienceMember,
   type Channel,
+  type CustomerExplanation,
   type Plan,
   type Projection,
 } from "@/lib/api";
@@ -29,9 +32,33 @@ const SUGGESTION =
 type Status = "idle" | "running" | "ready" | "error";
 
 const channelLabel = (c: Channel) =>
-  c === "email" ? "Email" : c === "sms" ? "SMS" : "WhatsApp";
+  c === "email"
+    ? "Email"
+    : c === "sms"
+      ? "SMS"
+      : c === "rcs"
+        ? "RCS"
+        : "WhatsApp";
 /** Confidence arrives as a percentage (0–100); the Ring wants a 0–1 fraction. */
 const toFraction = (n: number) => (n > 1 ? n / 100 : n);
+
+const rupeesShort = (n?: number) =>
+  typeof n === "number" && Number.isFinite(n)
+    ? `Rs ${Math.round(n).toLocaleString("en-IN")}`
+    : "—";
+
+/** Format a last-order value; if it isn't a parseable date, show it as-is. */
+const formatLastOrder = (v?: string) => {
+  if (!v) return "—";
+  const d = new Date(v);
+  return Number.isNaN(d.getTime())
+    ? v
+    : d.toLocaleDateString("en-US", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+};
 /** A sensible alternate to compare against — WhatsApp is the strong default. */
 const otherChannel = (c: Channel): Channel => (c === "whatsapp" ? "email" : "whatsapp");
 
@@ -267,7 +294,31 @@ function PlanView({
   const [alt, setAlt] = useState<Projection | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // Customer drill-down: the open member, a per-id cache, and load/error ids.
+  const [openMember, setOpenMember] = useState<AudienceMember | null>(null);
+  const [explanations, setExplanations] = useState<
+    Record<string, CustomerExplanation>
+  >({});
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [errorId, setErrorId] = useState<string | null>(null);
+
   const other = otherChannel(plan.channel);
+
+  function openCustomer(member: AudienceMember) {
+    setOpenMember(member);
+    setErrorId(null);
+    // Cached or already in flight — don't refetch.
+    if (explanations[member.id] || loadingId === member.id) return;
+    setLoadingId(member.id);
+    explainCustomer(member.id, plan.campaign_id)
+      .then((res) =>
+        setExplanations((prev) => ({ ...prev, [member.id]: res })),
+      )
+      .catch(() => setErrorId(member.id))
+      .finally(() =>
+        setLoadingId((id) => (id === member.id ? null : id)),
+      );
+  }
 
   async function approve() {
     setLaunching(true);
@@ -298,6 +349,7 @@ function PlanView({
   }
 
   return (
+    <>
     <Card className="flex flex-col gap-8">
       {/* Header: channel, audience, confidence */}
       <div className="flex flex-wrap items-start justify-between gap-6">
@@ -403,6 +455,34 @@ function PlanView({
         <Reasons title="Excluded" text={plan.explainability?.excluded} />
       </div>
 
+      {/* Sample customers — click a row to ask why they're in the segment */}
+      {plan.audience_sample && plan.audience_sample.length > 0 && (
+        <div className="flex flex-col gap-3 border-t border-line pt-6">
+          <Eyebrow>Sample customers</Eyebrow>
+          <ul className="divide-y divide-line overflow-hidden rounded-control border border-line">
+            {plan.audience_sample.map((member) => (
+              <li key={member.id}>
+                <button
+                  type="button"
+                  onClick={() => openCustomer(member)}
+                  className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left outline-none transition-colors hover:bg-canvas focus-visible:bg-canvas"
+                >
+                  <span className="truncate font-medium text-ink">
+                    {member.name}
+                  </span>
+                  <span className="flex shrink-0 items-center gap-4 font-mono text-xs text-muted">
+                    <span>{formatLastOrder(member.last_order)}</span>
+                    <span className="tabular-nums text-ink">
+                      {rupeesShort(member.total_spend)}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Channel comparison */}
       <AnimatePresence>
         {alt && (
@@ -440,6 +520,164 @@ function PlanView({
         </div>
       </div>
     </Card>
+
+      <AnimatePresence>
+        {openMember && (
+          <CustomerModal
+            member={openMember}
+            explanation={explanations[openMember.id]}
+            loading={loadingId === openMember.id && !explanations[openMember.id]}
+            failed={errorId === openMember.id && !explanations[openMember.id]}
+            onClose={() => setOpenMember(null)}
+          />
+        )}
+      </AnimatePresence>
+    </>
+  );
+}
+
+function CustomerModal({
+  member,
+  explanation,
+  loading,
+  failed,
+  onClose,
+}: {
+  member: AudienceMember;
+  explanation?: CustomerExplanation;
+  loading: boolean;
+  failed: boolean;
+  onClose: () => void;
+}) {
+  // Close on Escape.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
+      <motion.div
+        className="absolute inset-0 bg-ink/30 backdrop-blur-sm"
+        onClick={onClose}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+      />
+      <motion.div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Why ${member.name} is in this segment`}
+        className="relative z-10 w-full max-w-md"
+        initial={{ opacity: 0, y: 12, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 8, scale: 0.98 }}
+        transition={{ type: "spring", stiffness: 320, damping: 30 }}
+      >
+        <Card className="flex flex-col gap-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex flex-col gap-1">
+              <Eyebrow>Why this customer</Eyebrow>
+              <h3 className="font-display text-xl font-medium tracking-tight text-ink">
+                {member.name}
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="-mr-1 -mt-1 rounded-control p-1.5 text-muted outline-none transition-colors hover:bg-line/50 hover:text-ink focus-visible:ring-2 focus-visible:ring-live/40"
+            >
+              <svg viewBox="0 0 20 20" className="size-4" aria-hidden>
+                <path
+                  d="M5 5l10 10M15 5L5 15"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.75"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <MetaPill label="Last order" value={formatLastOrder(member.last_order)} />
+            <MetaPill label="Total spend" value={rupeesShort(member.total_spend)} />
+          </div>
+
+          <div className="min-h-12 border-t border-line pt-4">
+            {loading ? (
+              <span className="flex items-center gap-2 font-mono text-sm text-live">
+                <LivePulse size={8} />
+                Reasoning…
+              </span>
+            ) : failed ? (
+              <p className="text-sm text-failed">
+                Loop couldn&apos;t explain this pick. Close and open the customer
+                again.
+              </p>
+            ) : (
+              <ExplanationBody data={explanation} />
+            )}
+          </div>
+        </Card>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function ExplanationBody({ data }: { data?: CustomerExplanation }) {
+  const text =
+    typeof data?.explanation === "string"
+      ? data.explanation
+      : typeof data?.reasoning === "string"
+        ? (data.reasoning as string)
+        : undefined;
+  const reasons = Array.isArray(data?.reasons)
+    ? (data.reasons.filter((r) => typeof r === "string") as string[])
+    : [];
+
+  if (!text && reasons.length === 0) {
+    return (
+      <p className="text-sm text-muted">
+        No explanation came back for this customer.
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {text && (
+        <p className="whitespace-pre-line leading-relaxed text-ink/90">{text}</p>
+      )}
+      {reasons.length > 0 && (
+        <ul className="flex flex-col gap-2">
+          {reasons.map((r, i) => (
+            <li key={i} className="flex items-start gap-2 text-sm text-ink/90">
+              <span className="mt-1.5 size-1 shrink-0 rounded-full bg-live/70" />
+              {r}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function MetaPill({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-line px-2.5 py-1 font-mono text-[11px] text-muted">
+      <span className="uppercase tracking-wide">{label}</span>
+      <span className="tabular-nums text-ink">{value}</span>
+    </span>
   );
 }
 

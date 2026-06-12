@@ -10,6 +10,7 @@ const STATUS: Record<MessageStatus, { wrap: string; dot: string; label: string }
   queued: { wrap: "bg-queued/12 text-queued", dot: "bg-queued", label: "queued" },
   sent: { wrap: "bg-sent/12 text-sent", dot: "bg-sent", label: "sent" },
   delivered: { wrap: "bg-delivered/12 text-delivered", dot: "bg-delivered", label: "delivered" },
+  read: { wrap: "bg-read/12 text-read", dot: "bg-read", label: "read" },
   opened: { wrap: "bg-opened/12 text-opened", dot: "bg-opened", label: "opened" },
   clicked: { wrap: "bg-clicked/12 text-clicked", dot: "bg-clicked", label: "clicked" },
   converted: { wrap: "bg-converted/12 text-converted", dot: "bg-converted", label: "converted" },

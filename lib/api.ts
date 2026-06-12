@@ -13,13 +13,14 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
  * Domain types
  * ------------------------------------------------------------------ */
 
-export type Channel = "email" | "sms" | "whatsapp";
+export type Channel = "email" | "sms" | "whatsapp" | "rcs";
 
 /** Message lifecycle — mirrors the status tokens / Badge variants. */
 export type MessageStatus =
   | "queued"
   | "sent"
   | "delivered"
+  | "read"
   | "opened"
   | "clicked"
   | "converted"
@@ -37,6 +38,29 @@ export interface Projection {
 export interface Explainability {
   included: string;
   excluded: string;
+}
+
+/** A representative customer in the plan's audience. */
+export interface AudienceMember {
+  id: string;
+  name: string;
+  /** ISO date or human string of the customer's most recent order. */
+  last_order?: string;
+  /** Lifetime spend, in rupees. */
+  total_spend?: number;
+}
+
+/**
+ * Why a single customer landed in the segment. The backend's exact shape
+ * isn't fixed, so the UI reads `explanation` / `reasons` defensively.
+ */
+export interface CustomerExplanation {
+  explanation?: string;
+  reasons?: string[];
+  name?: string;
+  last_order?: string;
+  total_spend?: number;
+  [key: string]: unknown;
 }
 
 /** The campaign the agent proposes before launch. */
@@ -60,6 +84,8 @@ export interface Plan {
   /** Projected reach / opens / clicks for the chosen channel. */
   projected: Projection;
   explainability: Explainability;
+  /** A handful of representative customers from the audience. */
+  audience_sample?: AudienceMember[];
   /** Optional note the agent recalled from prior campaigns. */
   memory_note?: string;
 }
@@ -77,6 +103,7 @@ export interface Message {
 export interface Aggregates {
   sent: number;
   delivered: number;
+  read: number;
   opened: number;
   clicked: number;
   converted: number;
@@ -104,6 +131,30 @@ export interface Insight {
   what_worked: string;
   what_didnt: string;
   next_step: string;
+}
+
+/** A campaign as summarized in the list view (GET /campaigns). */
+export interface CampaignSummary {
+  id: string;
+  name: string;
+  channel: Channel;
+  status: string;
+  /** ISO timestamp the campaign was created. */
+  created_at: string;
+  audience_size: number;
+  /* Final funnel counts */
+  sent: number;
+  delivered: number;
+  opened: number;
+  clicked: number;
+  converted: number;
+  failed: number;
+  /* Rates, as percentages (0–100) */
+  open_rate: number;
+  click_rate: number;
+  conversion_rate: number;
+  /** Attributed revenue, in rupees. */
+  revenue: number;
 }
 
 /** A line emitted by the agent while it reasons and acts. */
@@ -234,6 +285,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) throw new Error(`${init?.method ?? "GET"} ${path} failed (${res.status})`);
   return res.json() as Promise<T>;
+}
+
+/** List past campaigns. Callers sort as needed (most recent first). */
+export function getCampaigns(): Promise<CampaignSummary[]> {
+  return request(`/campaigns`);
+}
+
+/** Explain why one customer is in a campaign's audience. */
+export function explainCustomer(
+  customerId: string,
+  campaignId: string,
+): Promise<CustomerExplanation> {
+  return request(
+    `/customers/${customerId}/explain?campaign_id=${encodeURIComponent(campaignId)}`,
+  );
 }
 
 /** Launch an approved campaign. */

@@ -32,13 +32,20 @@ import {
 } from "@/components/ui";
 
 const channelLabel = (c: Channel) =>
-  c === "email" ? "Email" : c === "sms" ? "SMS" : "WhatsApp";
+  c === "email"
+    ? "Email"
+    : c === "sms"
+      ? "SMS"
+      : c === "rcs"
+        ? "RCS"
+        : "WhatsApp";
 
 /* The lifecycle order, used for the spectrum bar and the funnel ladder. */
 const LADDER: MessageStatus[] = [
   "queued",
   "sent",
   "delivered",
+  "read",
   "opened",
   "clicked",
   "converted",
@@ -48,7 +55,7 @@ const LADDER: MessageStatus[] = [
 
 type Stats = {
   tiles: Record<
-    "sent" | "delivered" | "opened" | "clicked" | "converted" | "failed",
+    "sent" | "delivered" | "read" | "opened" | "clicked" | "converted" | "failed",
     number
   >;
   dist: Record<MessageStatus, number>;
@@ -64,6 +71,7 @@ function deriveStats(messages: Message[]): Stats {
     queued: 0,
     sent: 0,
     delivered: 0,
+    read: 0,
     opened: 0,
     clicked: 0,
     converted: 0,
@@ -75,12 +83,13 @@ function deriveStats(messages: Message[]): Stats {
   const converted = dist.converted;
   const clicked = converted + dist.clicked;
   const opened = clicked + dist.opened;
-  const delivered = opened + dist.delivered;
+  const read = opened + dist.read;
+  const delivered = read + dist.delivered;
   const sent = delivered + dist.sent + dist.retrying;
   const denom = delivered || 1;
 
   return {
-    tiles: { sent, delivered, opened, clicked, converted, failed: dist.failed },
+    tiles: { sent, delivered, read, opened, clicked, converted, failed: dist.failed },
     dist,
     total: messages.length,
     openRate: opened / denom,
@@ -218,6 +227,7 @@ const TILES: {
 }[] = [
   { key: "sent", label: "Sent", status: "sent" },
   { key: "delivered", label: "Delivered", status: "delivered" },
+  { key: "read", label: "Read", status: "read" },
   { key: "opened", label: "Opened", status: "opened" },
   { key: "clicked", label: "Clicked", status: "clicked" },
   { key: "converted", label: "Converted", status: "converted" },
@@ -233,7 +243,7 @@ function Metrics({ stats }: { stats: Stats }) {
         variants={stagger(0.05)}
         initial="hidden"
         animate="visible"
-        className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-6"
+        className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-7"
       >
         {TILES.map((t) => (
           <motion.div key={t.key} variants={fadeUp}>
