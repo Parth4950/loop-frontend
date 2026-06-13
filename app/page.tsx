@@ -11,9 +11,9 @@ import {
   sendCampaign,
   type AudienceMember,
   type Channel,
+  type ChannelComparisonRow,
   type CustomerExplanation,
   type Plan,
-  type Projection,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { fadeUp, springIn, stagger } from "@/lib/motion";
@@ -489,7 +489,7 @@ function PlanView({
             >
               <ChannelComparison
                 chosen={plan.channel}
-                comparison={plan.channel_comparison ?? {}}
+                comparison={plan.channel_comparison ?? []}
               />
             </motion.div>
           )}
@@ -739,29 +739,30 @@ function Reasons({ title, text }: { title: string; text?: string }) {
   );
 }
 
-const COMPARE_CHANNELS: Channel[] = ["whatsapp", "sms", "email", "rcs"];
-const COMPARE_METRICS: { key: keyof Projection; label: string }[] = [
-  { key: "projected_reach", label: "Reach" },
-  { key: "projected_opens", label: "Opens" },
-  { key: "projected_clicks", label: "Clicks" },
-];
+// The backend sends an array of rows with short keys: reach / opens / clicks.
+const COMPARE_METRICS: { key: "reach" | "opens" | "clicks"; label: string }[] =
+  [
+    { key: "reach", label: "Reach" },
+    { key: "opens", label: "Opens" },
+    { key: "clicks", label: "Clicks" },
+  ];
 
-const ZERO_PROJECTION: Projection = {
-  projected_reach: 0,
-  projected_opens: 0,
-  projected_clicks: 0,
-};
+const num = (v: unknown) =>
+  typeof v === "number" && Number.isFinite(v) ? v : 0;
 
 function ChannelComparison({
   chosen,
   comparison,
 }: {
   chosen: Channel;
-  comparison: Partial<Record<Channel, Projection>>;
+  comparison: ChannelComparisonRow[];
 }) {
-  // Always all four channels, chosen first; zero-fill any the backend omits.
-  const channels = [chosen, ...COMPARE_CHANNELS.filter((c) => c !== chosen)];
-  const projectionOf = (c: Channel) => comparison[c] ?? ZERO_PROJECTION;
+  if (!comparison.length) return null;
+
+  // Chosen channel first; keep the backend's order for the rest.
+  const rows = [...comparison].sort((a, b) =>
+    a.channel === chosen ? -1 : b.channel === chosen ? 1 : 0,
+  );
 
   return (
     <div className="rounded-control border border-line bg-canvas p-5">
@@ -775,18 +776,19 @@ function ChannelComparison({
 
       <div className="flex flex-col gap-5">
         {COMPARE_METRICS.map(({ key, label }) => {
-          const max = Math.max(1, ...channels.map((c) => projectionOf(c)[key]));
+          // Scale each bar against the max for THIS metric across channels.
+          const max = Math.max(1, ...rows.map((r) => num(r[key])));
           return (
             <div key={key} className="flex flex-col gap-1.5">
               <Eyebrow>{label}</Eyebrow>
               <div className="flex flex-col gap-1">
-                {channels.map((c) => (
+                {rows.map((r) => (
                   <ComparisonBar
-                    key={c}
-                    label={channelLabel(c)}
-                    value={projectionOf(c)[key]}
+                    key={r.channel}
+                    label={channelLabel(r.channel)}
+                    value={num(r[key])}
                     max={max}
-                    chosen={c === chosen}
+                    chosen={r.channel === chosen}
                   />
                 ))}
               </div>

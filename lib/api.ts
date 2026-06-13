@@ -27,11 +27,19 @@ export type MessageStatus =
   | "failed"
   | "retrying";
 
-/** Projected performance for a channel — drives StatTiles and compare bars. */
+/** Projected performance for the chosen channel — drives the plan StatTiles. */
 export interface Projection {
   projected_reach: number;
   projected_opens: number;
   projected_clicks: number;
+}
+
+/** One row of the per-channel comparison the backend sends (short keys). */
+export interface ChannelComparisonRow {
+  channel: Channel;
+  reach: number;
+  opens: number;
+  clicks: number;
 }
 
 /** Who's in and who's out, in plain language. */
@@ -85,8 +93,8 @@ export interface Plan {
   segment_filters?: Record<string, unknown>;
   /** Projected reach / opens / clicks for the chosen channel. */
   projected: Projection;
-  /** Projected performance per channel — drives the channel comparison. */
-  channel_comparison?: Partial<Record<Channel, Projection>>;
+  /** Per-channel projection rows — drives the channel comparison panel. */
+  channel_comparison?: ChannelComparisonRow[];
   explainability: Explainability;
   /** A handful of representative customers from the audience. */
   audience_sample?: AudienceMember[];
