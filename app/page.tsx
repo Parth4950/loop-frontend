@@ -293,6 +293,7 @@ function PlanView({
 }) {
   const [sqlOpen, setSqlOpen] = useState(false);
   const [launching, setLaunching] = useState(false);
+  const [showComparison, setShowComparison] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
   // Customer drill-down: the open member, a per-id cache, and load/error ids.
@@ -472,16 +473,23 @@ function PlanView({
           </div>
         )}
 
-        {/* Channel comparison — projected performance across all four channels */}
-        {plan.channel_comparison &&
-          Object.keys(plan.channel_comparison).length > 0 && (
-            <div className="border-t border-line pt-6">
+        {/* Channel comparison — toggled panel, projected performance per channel */}
+        <AnimatePresence initial={false}>
+          {showComparison && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.3, ease: [0.22, 0.61, 0.36, 1] }}
+              className="overflow-hidden"
+            >
               <ChannelComparison
                 chosen={plan.channel}
-                comparison={plan.channel_comparison}
+                comparison={plan.channel_comparison ?? {}}
               />
-            </div>
+            </motion.div>
           )}
+        </AnimatePresence>
 
         {/* Actions */}
         <div className="flex flex-col gap-3">
@@ -489,6 +497,12 @@ function PlanView({
           <div className="flex flex-wrap gap-3">
             <Button onClick={approve} disabled={launching}>
               {launching ? "Launching…" : "Approve & launch"}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => setShowComparison((s) => !s)}
+            >
+              {showComparison ? "Hide comparison" : "Compare"}
             </Button>
           </div>
         </div>
@@ -728,6 +742,12 @@ const COMPARE_METRICS: { key: keyof Projection; label: string }[] = [
   { key: "projected_clicks", label: "Clicks" },
 ];
 
+const ZERO_PROJECTION: Projection = {
+  projected_reach: 0,
+  projected_opens: 0,
+  projected_clicks: 0,
+};
+
 function ChannelComparison({
   chosen,
   comparison,
@@ -735,13 +755,9 @@ function ChannelComparison({
   chosen: Channel;
   comparison: Partial<Record<Channel, Projection>>;
 }) {
-  // Chosen channel first, then the rest that have data.
-  const channels = [
-    chosen,
-    ...COMPARE_CHANNELS.filter((c) => c !== chosen),
-  ].filter((c) => comparison[c]);
-
-  if (channels.length === 0) return null;
+  // Always all four channels, chosen first; zero-fill any the backend omits.
+  const channels = [chosen, ...COMPARE_CHANNELS.filter((c) => c !== chosen)];
+  const projectionOf = (c: Channel) => comparison[c] ?? ZERO_PROJECTION;
 
   return (
     <div className="rounded-control border border-line bg-canvas p-5">
@@ -755,7 +771,7 @@ function ChannelComparison({
 
       <div className="flex flex-col gap-5">
         {COMPARE_METRICS.map(({ key, label }) => {
-          const max = Math.max(1, ...channels.map((c) => comparison[c]![key]));
+          const max = Math.max(1, ...channels.map((c) => projectionOf(c)[key]));
           return (
             <div key={key} className="flex flex-col gap-1.5">
               <Eyebrow>{label}</Eyebrow>
@@ -764,7 +780,7 @@ function ChannelComparison({
                   <ComparisonBar
                     key={c}
                     label={channelLabel(c)}
-                    value={comparison[c]![key]}
+                    value={projectionOf(c)[key]}
                     max={max}
                     chosen={c === chosen}
                   />

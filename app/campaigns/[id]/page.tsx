@@ -16,6 +16,7 @@ import {
   analyze,
   openCampaignStream,
   switchChannel,
+  type Aggregates,
   type Channel,
   type Insight,
   type Message,
@@ -55,26 +56,22 @@ const LADDER: MessageStatus[] = [
   "failed",
 ];
 
-type Stats = {
-  tiles: Record<
-    | "sent"
-    | "delivered"
-    | "read"
-    | "opened"
-    | "clicked"
-    | "converted"
-    | "failed",
-    number
-  >;
-  dist: Record<MessageStatus, number>;
-  total: number;
-  openRate: number;
-  clickRate: number;
-  conversionRate: number;
+/** Empty aggregates so the tiles render zeros until the snapshot lands. */
+const ZERO_AGGREGATES: Aggregates = {
+  sent: 0,
+  delivered: 0,
+  read: 0,
+  opened: 0,
+  clicked: 0,
+  converted: 0,
+  failed: 0,
+  open_rate: 0,
+  click_rate: 0,
+  conversion_rate: 0,
 };
 
-/** Derive cumulative funnel counts, the current distribution, and rates. */
-function deriveStats(messages: Message[]): Stats {
+/** Current distribution (each message counted once) for the spectrum bar. */
+function distribution(messages: Message[]): Record<MessageStatus, number> {
   const dist = {
     queued: 0,
     sent: 0,
@@ -87,31 +84,7 @@ function deriveStats(messages: Message[]): Stats {
     retrying: 0,
   } as Record<MessageStatus, number>;
   for (const m of messages) dist[m.status]++;
-
-  const converted = dist.converted;
-  const clicked = converted + dist.clicked;
-  const opened = clicked + dist.opened;
-  const read = opened + dist.read;
-  const delivered = read + dist.delivered;
-  const sent = delivered + dist.sent + dist.retrying;
-  const denom = delivered || 1;
-
-  return {
-    tiles: {
-      sent,
-      delivered,
-      read,
-      opened,
-      clicked,
-      converted,
-      failed: dist.failed,
-    },
-    dist,
-    total: messages.length,
-    openRate: opened / denom,
-    clickRate: clicked / denom,
-    conversionRate: converted / denom,
-  };
+  return dist;
 }
 
 export default function CampaignPage() {
@@ -123,12 +96,15 @@ export default function CampaignPage() {
   const [live, setLive] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [versions, setVersions] = useState<Record<string, number>>({});
+  const [aggregates, setAggregates] = useState<Aggregates>(ZERO_AGGREGATES);
   const [recommendation, setRecommendation] = useState<{
     text: string;
     suggested_channel: Channel;
   } | null>(null);
 
-  const stats = useMemo(() => deriveStats(messages), [messages]);
+  // Counts/rates come straight from the backend's aggregates; only the
+  // spectrum bar's distribution is derived from the live message list.
+  const dist = useMemo(() => distribution(messages), [messages]);
 
   // Subscribe to the campaign's live SSE feed for the tab's lifetime; the
   // cleanup closes the EventSource so we don't leak a connection.
@@ -136,6 +112,10 @@ export default function CampaignPage() {
     if (!id) return;
 
     const source = openCampaignStream(id, (event) => {
+      // The backend ships fresh cumulative aggregates on any event that
+      // recomputes them — trust them rather than recomputing client-side.
+      if (event.aggregates) setAggregates(event.aggregates);
+
       if (event.type === "snapshot") {
         if (event.campaign_name) setName(event.campaign_name);
         if (event.channel) setChannel(event.channel);
@@ -216,7 +196,7 @@ export default function CampaignPage() {
         </AnimatePresence>
 
         {/* Metrics */}
-        <Metrics stats={stats} />
+        <Metrics aggregates={aggregates} dist={dist} total={messages.length} />
 
         {/* Live stream + analysis */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
@@ -224,7 +204,7 @@ export default function CampaignPage() {
             <MessageStream messages={messages} versions={versions} />
           </div>
           <div className="lg:col-span-2">
-            <Analysis id={id} stats={stats} />
+            <Analysis id={id} converted={aggregates.converted} />
           </div>
         </div>
       </div>
@@ -236,11 +216,16 @@ export default function CampaignPage() {
  * Metrics — spectrum bar, funnel tiles, rates
  * ------------------------------------------------------------------ */
 
-const TILES: {
-  key: keyof Stats["tiles"];
-  label: string;
-  status: MessageStatus;
-}[] = [
+type CountKey =
+  | "sent"
+  | "delivered"
+  | "read"
+  | "opened"
+  | "clicked"
+  | "converted"
+  | "failed";
+
+const TILES: { key: CountKey; label: string; status: MessageStatus }[] = [
   { key: "sent", label: "Sent", status: "sent" },
   { key: "delivered", label: "Delivered", status: "delivered" },
   { key: "read", label: "Read", status: "read" },
@@ -250,10 +235,18 @@ const TILES: {
   { key: "failed", label: "Failed", status: "failed" },
 ];
 
-function Metrics({ stats }: { stats: Stats }) {
+function Metrics({
+  aggregates,
+  dist,
+  total,
+}: {
+  aggregates: Aggregates;
+  dist: Record<MessageStatus, number>;
+  total: number;
+}) {
   return (
     <Card className="flex flex-col gap-7">
-      <SpectrumBar dist={stats.dist} total={stats.total} />
+      <SpectrumBar dist={dist} total={total} />
 
       <motion.div
         variants={stagger(0.05)}
@@ -265,41 +258,62 @@ function Metrics({ stats }: { stats: Stats }) {
           <motion.div key={t.key} variants={fadeUp}>
             <StatTile
               label={t.label}
-              value={stats.tiles[t.key]}
+              value={aggregates[t.key]}
               accent={`var(--color-${t.status})`}
             />
           </motion.div>
         ))}
       </motion.div>
 
+      {/* Rates straight from the backend, shown verbatim via ratePct — the
+          same value + formatter the analyze card uses, so the two match. */}
       <div className="grid grid-cols-3 gap-6 border-t border-line pt-6">
-        <StatTile
+        <RateTile
           label="Open rate"
-          value={stats.openRate * 100}
-          mono
+          value={aggregates.open_rate}
           accent="var(--color-opened)"
-          format={pct}
         />
-        <StatTile
+        <RateTile
           label="Click rate"
-          value={stats.clickRate * 100}
-          mono
+          value={aggregates.click_rate}
           accent="var(--color-clicked)"
-          format={pct}
         />
-        <StatTile
+        <RateTile
           label="Conversion"
-          value={stats.conversionRate * 100}
-          mono
+          value={aggregates.conversion_rate}
           accent="var(--color-converted)"
-          format={pct}
         />
       </div>
     </Card>
   );
 }
 
-const pct = (n: number) => `${n.toFixed(1)}%`;
+/** A rate figure, rendered verbatim from the backend (no count-up, no recompute). */
+function RateTile({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: number;
+  accent: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-1.5">
+        <span
+          className="size-1.5 shrink-0 rounded-full"
+          style={{ backgroundColor: accent }}
+          aria-hidden
+        />
+        <Eyebrow>{label}</Eyebrow>
+      </div>
+      <span className="font-mono text-3xl leading-none tracking-tight tabular-nums text-ink">
+        {ratePct(value)}
+      </span>
+    </div>
+  );
+}
 
 /** A quiet, slim distribution of where every message currently sits. */
 function SpectrumBar({
@@ -505,7 +519,7 @@ function MessageRow({
  * Analysis
  * ------------------------------------------------------------------ */
 
-function Analysis({ id, stats }: { id: string; stats: Stats }) {
+function Analysis({ id, converted }: { id: string; converted: number }) {
   const [insight, setInsight] = useState<Insight | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -529,7 +543,7 @@ function Analysis({ id, stats }: { id: string; stats: Stats }) {
       <div className="flex flex-col gap-2">
         <Eyebrow>Results</Eyebrow>
         <p className="text-muted">
-          {stats.tiles.converted > 0
+          {converted > 0
             ? "Conversions are landing. Pull the full readout when you're ready."
             : "Run the analysis once the funnel has moved."}
         </p>

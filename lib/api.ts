@@ -103,7 +103,12 @@ export interface Message {
   at?: string;
 }
 
-/** Cumulative funnel counts at a point in time. */
+/**
+ * Cumulative funnel counts + rates, computed by the backend.
+ * Invariant: sent (= total messages) >= delivered >= read >= opened
+ * >= clicked >= converted. Rates are percentages (0–100); the client
+ * displays them verbatim and never recomputes them.
+ */
 export interface Aggregates {
   sent: number;
   delivered: number;
@@ -112,6 +117,9 @@ export interface Aggregates {
   clicked: number;
   converted: number;
   failed: number;
+  open_rate: number;
+  click_rate: number;
+  conversion_rate: number;
 }
 
 /**
