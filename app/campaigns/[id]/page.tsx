@@ -16,7 +16,6 @@ import {
   analyze,
   openCampaignStream,
   switchChannel,
-  type Aggregates,
   type Channel,
   type Insight,
   type Message,
@@ -56,22 +55,28 @@ const LADDER: MessageStatus[] = [
   "failed",
 ];
 
-/** Empty aggregates so the tiles render zeros until the snapshot lands. */
-const ZERO_AGGREGATES: Aggregates = {
-  sent: 0,
-  delivered: 0,
-  read: 0,
-  opened: 0,
-  clicked: 0,
-  converted: 0,
-  failed: 0,
-  open_rate: 0,
-  click_rate: 0,
-  conversion_rate: 0,
+type Stats = {
+  tiles: Record<CountKey, number>;
+  dist: Record<MessageStatus, number>;
+  total: number;
+  openRate: number;
+  clickRate: number;
+  conversionRate: number;
 };
 
-/** Current distribution (each message counted once) for the spectrum bar. */
-function distribution(messages: Message[]): Record<MessageStatus, number> {
+/**
+ * Derive funnel counts + rates from the live message list (always current),
+ * recomputed on every render as messages update.
+ *
+ * Counts are CUMULATIVE: a message at stage X counts toward every earlier
+ * stage, so sent >= delivered >= read >= opened >= clicked >= converted.
+ * sent = total messages; failed is counted on its own.
+ *
+ * Rates use the SAME funnel formula as the analyze card (open = opened/
+ * delivered, click = clicked/opened, conversion = converted/clicked),
+ * divide-by-zero safe and rounded to one decimal to match it exactly.
+ */
+function deriveStats(messages: Message[]): Stats {
   const dist = {
     queued: 0,
     sent: 0,
@@ -84,7 +89,33 @@ function distribution(messages: Message[]): Record<MessageStatus, number> {
     retrying: 0,
   } as Record<MessageStatus, number>;
   for (const m of messages) dist[m.status]++;
-  return dist;
+
+  const converted = dist.converted;
+  const clicked = converted + dist.clicked;
+  const opened = clicked + dist.opened;
+  const read = opened + dist.read;
+  const delivered = read + dist.delivered;
+  const sent = messages.length; // everyone was sent; failed counted separately
+
+  const rate = (num: number, den: number) =>
+    den > 0 ? Math.round((num / den) * 1000) / 10 : 0;
+
+  return {
+    tiles: {
+      sent,
+      delivered,
+      read,
+      opened,
+      clicked,
+      converted,
+      failed: dist.failed,
+    },
+    dist,
+    total: messages.length,
+    openRate: rate(opened, delivered),
+    clickRate: rate(clicked, opened),
+    conversionRate: rate(converted, clicked),
+  };
 }
 
 export default function CampaignPage() {
@@ -96,15 +127,14 @@ export default function CampaignPage() {
   const [live, setLive] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [versions, setVersions] = useState<Record<string, number>>({});
-  const [aggregates, setAggregates] = useState<Aggregates>(ZERO_AGGREGATES);
   const [recommendation, setRecommendation] = useState<{
     text: string;
     suggested_channel: Channel;
   } | null>(null);
 
-  // Counts/rates come straight from the backend's aggregates; only the
-  // spectrum bar's distribution is derived from the live message list.
-  const dist = useMemo(() => distribution(messages), [messages]);
+  // Tiles and rates are derived from the live message list — which the SSE
+  // updates keep current — so they recompute on every status change.
+  const stats = useMemo(() => deriveStats(messages), [messages]);
 
   // Subscribe to the campaign's live SSE feed for the tab's lifetime; the
   // cleanup closes the EventSource so we don't leak a connection.
@@ -112,10 +142,6 @@ export default function CampaignPage() {
     if (!id) return;
 
     const source = openCampaignStream(id, (event) => {
-      // The backend ships fresh cumulative aggregates on any event that
-      // recomputes them — trust them rather than recomputing client-side.
-      if (event.aggregates) setAggregates(event.aggregates);
-
       if (event.type === "snapshot") {
         if (event.campaign_name) setName(event.campaign_name);
         if (event.channel) setChannel(event.channel);
@@ -196,7 +222,7 @@ export default function CampaignPage() {
         </AnimatePresence>
 
         {/* Metrics */}
-        <Metrics aggregates={aggregates} dist={dist} total={messages.length} />
+        <Metrics stats={stats} />
 
         {/* Live stream + analysis */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
@@ -204,7 +230,7 @@ export default function CampaignPage() {
             <MessageStream messages={messages} versions={versions} />
           </div>
           <div className="lg:col-span-2">
-            <Analysis id={id} converted={aggregates.converted} />
+            <Analysis id={id} converted={stats.tiles.converted} />
           </div>
         </div>
       </div>
@@ -235,18 +261,10 @@ const TILES: { key: CountKey; label: string; status: MessageStatus }[] = [
   { key: "failed", label: "Failed", status: "failed" },
 ];
 
-function Metrics({
-  aggregates,
-  dist,
-  total,
-}: {
-  aggregates: Aggregates;
-  dist: Record<MessageStatus, number>;
-  total: number;
-}) {
+function Metrics({ stats }: { stats: Stats }) {
   return (
     <Card className="flex flex-col gap-7">
-      <SpectrumBar dist={dist} total={total} />
+      <SpectrumBar dist={stats.dist} total={stats.total} />
 
       <motion.div
         variants={stagger(0.05)}
@@ -258,29 +276,29 @@ function Metrics({
           <motion.div key={t.key} variants={fadeUp}>
             <StatTile
               label={t.label}
-              value={aggregates[t.key]}
+              value={stats.tiles[t.key]}
               accent={`var(--color-${t.status})`}
             />
           </motion.div>
         ))}
       </motion.div>
 
-      {/* Rates straight from the backend, shown verbatim via ratePct — the
-          same value + formatter the analyze card uses, so the two match. */}
+      {/* Rates via the same funnel formula + ratePct formatter as the analyze
+          card, so the tiles and the analyze readout always match. */}
       <div className="grid grid-cols-3 gap-6 border-t border-line pt-6">
         <RateTile
           label="Open rate"
-          value={aggregates.open_rate}
+          value={stats.openRate}
           accent="var(--color-opened)"
         />
         <RateTile
           label="Click rate"
-          value={aggregates.click_rate}
+          value={stats.clickRate}
           accent="var(--color-clicked)"
         />
         <RateTile
           label="Conversion"
-          value={aggregates.conversion_rate}
+          value={stats.conversionRate}
           accent="var(--color-converted)"
         />
       </div>
@@ -288,7 +306,7 @@ function Metrics({
   );
 }
 
-/** A rate figure, rendered verbatim from the backend (no count-up, no recompute). */
+/** A rate figure, rendered via the shared ratePct (no count-up). */
 function RateTile({
   label,
   value,

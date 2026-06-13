@@ -41,8 +41,12 @@ const channelLabel = (c: Channel) =>
       : c === "rcs"
         ? "RCS"
         : "WhatsApp";
-/** Confidence arrives as a percentage (0–100); the Ring wants a 0–1 fraction. */
-const toFraction = (n: number) => (n > 1 ? n / 100 : n);
+/** Confidence arrives as a percentage (0–100); the Ring wants a 0–1 fraction.
+ *  Guard against a missing/NaN value so the ring still renders (at 0). */
+const toFraction = (n: number) => {
+  if (!Number.isFinite(n)) return 0;
+  return n > 1 ? n / 100 : n;
+};
 
 const rupeesShort = (n?: number) =>
   typeof n === "number" && Number.isFinite(n)
