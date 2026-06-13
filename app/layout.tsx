@@ -1,3 +1,5 @@
+/** Root layout — fonts, the slim top bar (wordmark + nav + live pulse), canvas shell. */
+
 import type { Metadata } from "next";
 import { Space_Grotesk, Inter, JetBrains_Mono } from "next/font/google";
 import { LivePulse } from "@/components/ui";

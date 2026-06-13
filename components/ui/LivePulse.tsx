@@ -18,9 +18,7 @@ export function LivePulse({
       style={{ width: size, height: size }}
       aria-hidden
     >
-      <span
-        className="absolute inset-0 rounded-full bg-live/50 [animation:var(--animate-halo)]"
-      />
+      <span className="absolute inset-0 rounded-full bg-live/50 [animation:var(--animate-halo)]" />
       <span className="relative inline-block size-full rounded-full bg-live" />
     </span>
   );

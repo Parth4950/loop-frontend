@@ -1,5 +1,7 @@
 "use client";
 
+/** Planner — the command console: prompt → streamed agent timeline → plan card. */
+
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, MotionConfig, motion } from "framer-motion";
@@ -7,13 +9,13 @@ import {
   explainCustomer,
   runAgent,
   sendCampaign,
-  simulate,
   type AudienceMember,
   type Channel,
   type CustomerExplanation,
   type Plan,
   type Projection,
 } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import { fadeUp, springIn, stagger } from "@/lib/motion";
 import {
   Button,
@@ -59,8 +61,6 @@ const formatLastOrder = (v?: string) => {
         year: "numeric",
       });
 };
-/** A sensible alternate to compare against — WhatsApp is the strong default. */
-const otherChannel = (c: Channel): Channel => (c === "whatsapp" ? "email" : "whatsapp");
 
 /** Turn a backend agent-error reason into directive, in-voice copy. */
 function agentErrorCopy(detail?: string): string {
@@ -255,7 +255,10 @@ function TraceShimmer() {
       {[0, 1, 2].map((i) => (
         <div key={i} className="flex items-center gap-3 py-2.5">
           <span className="shimmer size-5 rounded-full" />
-          <span className="shimmer h-3 rounded" style={{ width: 160 + i * 28 }} />
+          <span
+            className="shimmer h-3 rounded"
+            style={{ width: 160 + i * 28 }}
+          />
         </div>
       ))}
     </div>
@@ -290,8 +293,6 @@ function PlanView({
 }) {
   const [sqlOpen, setSqlOpen] = useState(false);
   const [launching, setLaunching] = useState(false);
-  const [comparing, setComparing] = useState(false);
-  const [alt, setAlt] = useState<Projection | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   // Customer drill-down: the open member, a per-id cache, and load/error ids.
@@ -302,8 +303,6 @@ function PlanView({
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [errorId, setErrorId] = useState<string | null>(null);
 
-  const other = otherChannel(plan.channel);
-
   function openCustomer(member: AudienceMember) {
     setOpenMember(member);
     setErrorId(null);
@@ -311,13 +310,9 @@ function PlanView({
     if (explanations[member.id] || loadingId === member.id) return;
     setLoadingId(member.id);
     explainCustomer(member.id, plan.campaign_id)
-      .then((res) =>
-        setExplanations((prev) => ({ ...prev, [member.id]: res })),
-      )
+      .then((res) => setExplanations((prev) => ({ ...prev, [member.id]: res })))
       .catch(() => setErrorId(member.id))
-      .finally(() =>
-        setLoadingId((id) => (id === member.id ? null : id)),
-      );
+      .finally(() => setLoadingId((id) => (id === member.id ? null : id)));
   }
 
   async function approve() {
@@ -332,201 +327,181 @@ function PlanView({
     }
   }
 
-  async function compare() {
-    if (alt) {
-      setAlt(null);
-      return;
-    }
-    setComparing(true);
-    setActionError(null);
-    try {
-      setAlt(await simulate(plan.audience_size, other));
-    } catch {
-      setActionError(`Couldn't simulate ${channelLabel(other)} right now.`);
-    } finally {
-      setComparing(false);
-    }
-  }
-
   return (
     <>
-    <Card className="flex flex-col gap-8">
-      {/* Header: channel, audience, confidence */}
-      <div className="flex flex-wrap items-start justify-between gap-6">
-        <div className="flex flex-col gap-4">
-          <ChannelPill channel={plan.channel} />
-          <div className="flex items-baseline gap-2">
-            <CountUp
-              value={plan.audience_size}
-              className="font-display text-5xl font-medium tabular-nums leading-none text-ink"
-            />
-            <span className="text-muted">customers</span>
+      <Card className="flex flex-col gap-8">
+        {/* Header: channel, audience, confidence */}
+        <div className="flex flex-wrap items-start justify-between gap-6">
+          <div className="flex flex-col gap-4">
+            <ChannelPill channel={plan.channel} />
+            <div className="flex items-baseline gap-2">
+              <CountUp
+                value={plan.audience_size}
+                className="font-display text-5xl font-medium tabular-nums leading-none text-ink"
+              />
+              <span className="text-muted">customers</span>
+            </div>
+          </div>
+          <div className="flex flex-col items-center gap-1.5">
+            <Ring value={toFraction(plan.confidence)} />
+            <Eyebrow>Confidence</Eyebrow>
           </div>
         </div>
-        <div className="flex flex-col items-center gap-1.5">
-          <Ring value={toFraction(plan.confidence)} />
-          <Eyebrow>Confidence</Eyebrow>
-        </div>
-      </div>
 
-      {plan.reason && (
-        <p className="-mt-2 max-w-2xl leading-relaxed text-muted">
-          {plan.reason}
-        </p>
-      )}
-
-      {/* Projected performance */}
-      <motion.div
-        variants={stagger(0.07)}
-        initial="hidden"
-        animate="visible"
-        className="grid grid-cols-3 gap-6"
-      >
-        {(
-          [
-            ["Projected reach", plan.projected.projected_reach],
-            ["Projected opens", plan.projected.projected_opens],
-            ["Projected clicks", plan.projected.projected_clicks],
-          ] as const
-        ).map(([label, value]) => (
-          <motion.div key={label} variants={fadeUp}>
-            <StatTile label={label} value={value} />
-          </motion.div>
-        ))}
-      </motion.div>
-
-      {/* The crafted message */}
-      <div>
-        <Eyebrow>The message</Eyebrow>
-        <figure className="mt-3 rounded-control border-l-2 border-live bg-live-wash px-5 py-4">
-          {plan.subject && (
-            <figcaption className="mb-1.5 font-display text-base font-medium text-ink">
-              {plan.subject}
-            </figcaption>
-          )}
-          <p className="whitespace-pre-line leading-relaxed text-ink/90">
-            {plan.message}
+        {plan.reason && (
+          <p className="-mt-2 max-w-2xl leading-relaxed text-muted">
+            {plan.reason}
           </p>
-        </figure>
-        {plan.memory_note && (
-          <div className="mt-3 flex items-start gap-2 text-sm text-muted">
-            <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-live/70" />
-            <span>
-              <span className="font-mono text-[11px] uppercase tracking-wide text-live">
-                memory
-              </span>{" "}
-              {plan.memory_note}
-            </span>
+        )}
+
+        {/* Projected performance */}
+        <motion.div
+          variants={stagger(0.07)}
+          initial="hidden"
+          animate="visible"
+          className="grid grid-cols-3 gap-6"
+        >
+          {(
+            [
+              ["Projected reach", plan.projected.projected_reach],
+              ["Projected opens", plan.projected.projected_opens],
+              ["Projected clicks", plan.projected.projected_clicks],
+            ] as const
+          ).map(([label, value]) => (
+            <motion.div key={label} variants={fadeUp}>
+              <StatTile label={label} value={value} />
+            </motion.div>
+          ))}
+        </motion.div>
+
+        {/* The crafted message */}
+        <div>
+          <Eyebrow>The message</Eyebrow>
+          <figure className="mt-3 rounded-control border-l-2 border-live bg-live-wash px-5 py-4">
+            {plan.subject && (
+              <figcaption className="mb-1.5 font-display text-base font-medium text-ink">
+                {plan.subject}
+              </figcaption>
+            )}
+            <p className="whitespace-pre-line leading-relaxed text-ink/90">
+              <PersonalizedMessage text={plan.message} />
+            </p>
+            {plan.message_preview && (
+              <div className="mt-3 flex items-baseline gap-2 border-t border-live/20 pt-3 text-sm text-muted">
+                <span className="shrink-0 font-mono text-[11px] uppercase tracking-wide text-live">
+                  Preview
+                </span>
+                <span className="italic">
+                  &ldquo;{plan.message_preview}&rdquo;
+                </span>
+              </div>
+            )}
+          </figure>
+          {plan.memory_note && (
+            <div className="mt-3 flex items-start gap-2 text-sm text-muted">
+              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-live/70" />
+              <span>
+                <span className="font-mono text-[11px] uppercase tracking-wide text-live">
+                  memory
+                </span>{" "}
+                {plan.memory_note}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* View SQL */}
+        <div>
+          <button
+            type="button"
+            onClick={() => setSqlOpen((o) => !o)}
+            aria-expanded={sqlOpen}
+            className="inline-flex items-center gap-1.5 font-mono text-xs uppercase tracking-wide text-muted transition-colors hover:text-ink"
+          >
+            <Chevron open={sqlOpen} />
+            {sqlOpen ? "Hide SQL" : "View SQL"}
+          </button>
+          <AnimatePresence initial={false}>
+            {sqlOpen && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.25, ease: [0.22, 0.61, 0.36, 1] }}
+                className="overflow-hidden"
+              >
+                <pre className="mt-3 overflow-x-auto rounded-control bg-ink p-4 text-xs leading-relaxed text-canvas/90">
+                  <code className="font-mono">{plan.compiled_sql}</code>
+                </pre>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Explainability */}
+        <div className="grid grid-cols-1 gap-6 border-t border-line pt-6 sm:grid-cols-2">
+          <Reasons title="Included" text={plan.explainability?.included} />
+          <Reasons title="Excluded" text={plan.explainability?.excluded} />
+        </div>
+
+        {/* Sample customers — click a row to ask why they're in the segment */}
+        {plan.audience_sample && plan.audience_sample.length > 0 && (
+          <div className="flex flex-col gap-3 border-t border-line pt-6">
+            <Eyebrow>Sample customers</Eyebrow>
+            <ul className="divide-y divide-line overflow-hidden rounded-control border border-line">
+              {plan.audience_sample.map((member) => (
+                <li key={member.id}>
+                  <button
+                    type="button"
+                    onClick={() => openCustomer(member)}
+                    className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left outline-none transition-colors hover:bg-canvas focus-visible:bg-canvas"
+                  >
+                    <span className="truncate font-medium text-ink">
+                      {member.name}
+                    </span>
+                    <span className="flex shrink-0 items-center gap-4 font-mono text-xs text-muted">
+                      <span>{formatLastOrder(member.last_order)}</span>
+                      <span className="tabular-nums text-ink">
+                        {rupeesShort(member.total_spend)}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
-      </div>
 
-      {/* View SQL */}
-      <div>
-        <button
-          type="button"
-          onClick={() => setSqlOpen((o) => !o)}
-          aria-expanded={sqlOpen}
-          className="inline-flex items-center gap-1.5 font-mono text-xs uppercase tracking-wide text-muted transition-colors hover:text-ink"
-        >
-          <Chevron open={sqlOpen} />
-          {sqlOpen ? "Hide SQL" : "View SQL"}
-        </button>
-        <AnimatePresence initial={false}>
-          {sqlOpen && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.25, ease: [0.22, 0.61, 0.36, 1] }}
-              className="overflow-hidden"
-            >
-              <pre className="mt-3 overflow-x-auto rounded-control bg-ink p-4 text-xs leading-relaxed text-canvas/90">
-                <code className="font-mono">{plan.compiled_sql}</code>
-              </pre>
-            </motion.div>
+        {/* Channel comparison — projected performance across all four channels */}
+        {plan.channel_comparison &&
+          Object.keys(plan.channel_comparison).length > 0 && (
+            <div className="border-t border-line pt-6">
+              <ChannelComparison
+                chosen={plan.channel}
+                comparison={plan.channel_comparison}
+              />
+            </div>
           )}
-        </AnimatePresence>
-      </div>
 
-      {/* Explainability */}
-      <div className="grid grid-cols-1 gap-6 border-t border-line pt-6 sm:grid-cols-2">
-        <Reasons title="Included" text={plan.explainability?.included} />
-        <Reasons title="Excluded" text={plan.explainability?.excluded} />
-      </div>
-
-      {/* Sample customers — click a row to ask why they're in the segment */}
-      {plan.audience_sample && plan.audience_sample.length > 0 && (
-        <div className="flex flex-col gap-3 border-t border-line pt-6">
-          <Eyebrow>Sample customers</Eyebrow>
-          <ul className="divide-y divide-line overflow-hidden rounded-control border border-line">
-            {plan.audience_sample.map((member) => (
-              <li key={member.id}>
-                <button
-                  type="button"
-                  onClick={() => openCustomer(member)}
-                  className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left outline-none transition-colors hover:bg-canvas focus-visible:bg-canvas"
-                >
-                  <span className="truncate font-medium text-ink">
-                    {member.name}
-                  </span>
-                  <span className="flex shrink-0 items-center gap-4 font-mono text-xs text-muted">
-                    <span>{formatLastOrder(member.last_order)}</span>
-                    <span className="tabular-nums text-ink">
-                      {rupeesShort(member.total_spend)}
-                    </span>
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
+        {/* Actions */}
+        <div className="flex flex-col gap-3">
+          {actionError && <p className="text-sm text-failed">{actionError}</p>}
+          <div className="flex flex-wrap gap-3">
+            <Button onClick={approve} disabled={launching}>
+              {launching ? "Launching…" : "Approve & launch"}
+            </Button>
+          </div>
         </div>
-      )}
-
-      {/* Channel comparison */}
-      <AnimatePresence>
-        {alt && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.3, ease: [0.22, 0.61, 0.36, 1] }}
-            className="overflow-hidden"
-          >
-            <Compare
-              chosen={plan.channel}
-              alternate={other}
-              chosenProj={plan.projected}
-              altProj={alt}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Actions */}
-      <div className="flex flex-col gap-3">
-        {actionError && <p className="text-sm text-failed">{actionError}</p>}
-        <div className="flex flex-wrap gap-3">
-          <Button onClick={approve} disabled={launching}>
-            {launching ? "Launching…" : "Approve & launch"}
-          </Button>
-          <Button variant="secondary" onClick={compare} disabled={comparing}>
-            {alt
-              ? "Hide comparison"
-              : comparing
-                ? "Simulating…"
-                : `Compare with ${channelLabel(other)}`}
-          </Button>
-        </div>
-      </div>
-    </Card>
+      </Card>
 
       <AnimatePresence>
         {openMember && (
           <CustomerModal
             member={openMember}
             explanation={explanations[openMember.id]}
-            loading={loadingId === openMember.id && !explanations[openMember.id]}
+            loading={
+              loadingId === openMember.id && !explanations[openMember.id]
+            }
             failed={errorId === openMember.id && !explanations[openMember.id]}
             onClose={() => setOpenMember(null)}
           />
@@ -609,8 +584,14 @@ function CustomerModal({
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <MetaPill label="Last order" value={formatLastOrder(member.last_order)} />
-            <MetaPill label="Total spend" value={rupeesShort(member.total_spend)} />
+            <MetaPill
+              label="Last order"
+              value={formatLastOrder(member.last_order)}
+            />
+            <MetaPill
+              label="Total spend"
+              value={rupeesShort(member.total_spend)}
+            />
           </div>
 
           <div className="min-h-12 border-t border-line pt-4">
@@ -621,8 +602,8 @@ function CustomerModal({
               </span>
             ) : failed ? (
               <p className="text-sm text-failed">
-                Loop couldn&apos;t explain this pick. Close and open the customer
-                again.
+                Loop couldn&apos;t explain this pick. Close and open the
+                customer again.
               </p>
             ) : (
               <ExplanationBody data={explanation} />
@@ -656,7 +637,9 @@ function ExplanationBody({ data }: { data?: CustomerExplanation }) {
   return (
     <div className="flex flex-col gap-3">
       {text && (
-        <p className="whitespace-pre-line leading-relaxed text-ink/90">{text}</p>
+        <p className="whitespace-pre-line leading-relaxed text-ink/90">
+          {text}
+        </p>
       )}
       {reasons.length > 0 && (
         <ul className="flex flex-col gap-2">
@@ -678,6 +661,28 @@ function MetaPill({ label, value }: { label: string; value: string }) {
       <span className="uppercase tracking-wide">{label}</span>
       <span className="tabular-nums text-ink">{value}</span>
     </span>
+  );
+}
+
+/** Render message copy, turning {token} placeholders into styled chips. */
+function PersonalizedMessage({ text }: { text: string }) {
+  const parts = text.split(/(\{[^}]+\})/g);
+  return (
+    <>
+      {parts.map((part, i) =>
+        /^\{[^}]+\}$/.test(part) ? (
+          <span
+            key={i}
+            className="mx-0.5 inline-flex items-center gap-1 rounded-md bg-surface px-1.5 py-0.5 align-baseline font-mono text-[0.8em] font-medium text-ink ring-1 ring-line"
+          >
+            <span className="size-1 rounded-full bg-live" aria-hidden />
+            {part.slice(1, -1)}
+          </span>
+        ) : (
+          <span key={i}>{part}</span>
+        ),
+      )}
+    </>
   );
 }
 
@@ -716,49 +721,55 @@ function Reasons({ title, text }: { title: string; text?: string }) {
   );
 }
 
-function Compare({
+const COMPARE_CHANNELS: Channel[] = ["whatsapp", "sms", "email", "rcs"];
+const COMPARE_METRICS: { key: keyof Projection; label: string }[] = [
+  { key: "projected_reach", label: "Reach" },
+  { key: "projected_opens", label: "Opens" },
+  { key: "projected_clicks", label: "Clicks" },
+];
+
+function ChannelComparison({
   chosen,
-  alternate,
-  chosenProj,
-  altProj,
+  comparison,
 }: {
   chosen: Channel;
-  alternate: Channel;
-  chosenProj: Projection;
-  altProj: Projection;
+  comparison: Partial<Record<Channel, Projection>>;
 }) {
-  const metrics: { key: keyof Projection; label: string }[] = [
-    { key: "projected_reach", label: "Reach" },
-    { key: "projected_opens", label: "Opens" },
-    { key: "projected_clicks", label: "Clicks" },
-  ];
+  // Chosen channel first, then the rest that have data.
+  const channels = [
+    chosen,
+    ...COMPARE_CHANNELS.filter((c) => c !== chosen),
+  ].filter((c) => comparison[c]);
+
+  if (channels.length === 0) return null;
 
   return (
     <div className="rounded-control border border-line bg-canvas p-5">
-      <div className="mb-4 flex items-center justify-between">
-        <Eyebrow>
-          {channelLabel(chosen)} vs {channelLabel(alternate)}
-        </Eyebrow>
-        <div className="flex items-center gap-4 font-mono text-[11px] uppercase tracking-wide">
-          <span className="flex items-center gap-1.5 text-ink">
-            <span className="size-2 rounded-sm bg-ink" /> {channelLabel(chosen)}
-          </span>
-          <span className="flex items-center gap-1.5 text-muted">
-            <span className="size-2 rounded-sm bg-muted" />{" "}
-            {channelLabel(alternate)}
-          </span>
-        </div>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <Eyebrow>Channel comparison</Eyebrow>
+        <span className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-wide text-muted">
+          <span className="size-1.5 rounded-full bg-live" aria-hidden />
+          Chosen · <span className="text-ink">{channelLabel(chosen)}</span>
+        </span>
       </div>
-      <div className="flex flex-col gap-4">
-        {metrics.map(({ key, label }) => {
-          const a = chosenProj[key];
-          const b = altProj[key];
-          const max = Math.max(a, b, 1);
+
+      <div className="flex flex-col gap-5">
+        {COMPARE_METRICS.map(({ key, label }) => {
+          const max = Math.max(1, ...channels.map((c) => comparison[c]![key]));
           return (
             <div key={key} className="flex flex-col gap-1.5">
               <Eyebrow>{label}</Eyebrow>
-              <MiniBar value={a} max={max} tone="ink" />
-              <MiniBar value={b} max={max} tone="muted" />
+              <div className="flex flex-col gap-1">
+                {channels.map((c) => (
+                  <ComparisonBar
+                    key={c}
+                    label={channelLabel(c)}
+                    value={comparison[c]![key]}
+                    max={max}
+                    chosen={c === chosen}
+                  />
+                ))}
+              </div>
             </div>
           );
         })}
@@ -767,27 +778,45 @@ function Compare({
   );
 }
 
-function MiniBar({
+function ComparisonBar({
+  label,
   value,
   max,
-  tone,
+  chosen,
 }: {
+  label: string;
   value: number;
   max: number;
-  tone: "ink" | "muted";
+  chosen: boolean;
 }) {
   const pct = Math.round((value / max) * 100);
   return (
     <div className="flex items-center gap-3">
-      <div className="h-2 flex-1 overflow-hidden rounded-full bg-line/70">
+      <span
+        className={cn(
+          "flex w-20 shrink-0 items-center gap-1.5 font-mono text-[11px] uppercase tracking-wide",
+          chosen ? "text-ink" : "text-muted",
+        )}
+      >
+        {chosen && (
+          <span className="size-1.5 rounded-full bg-live" aria-hidden />
+        )}
+        {label}
+      </span>
+      <div className="h-2 flex-1 overflow-hidden rounded-full bg-line/60">
         <motion.div
           initial={{ width: 0 }}
           animate={{ width: `${pct}%` }}
           transition={{ duration: 0.7, ease: [0.22, 0.61, 0.36, 1] }}
-          className={tone === "ink" ? "h-full bg-ink" : "h-full bg-muted"}
+          className={cn("h-full", chosen ? "bg-ink" : "bg-muted/45")}
         />
       </div>
-      <span className="w-14 text-right font-mono text-xs tabular-nums text-ink">
+      <span
+        className={cn(
+          "w-12 text-right font-mono text-xs tabular-nums",
+          chosen ? "text-ink" : "text-muted",
+        )}
+      >
         {value.toLocaleString("en-US")}
       </span>
     </div>

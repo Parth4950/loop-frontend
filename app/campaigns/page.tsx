@@ -1,9 +1,15 @@
 "use client";
 
+/** Past Campaigns — a grid of every campaign Loop has run, newest first. */
+
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { getCampaigns, type CampaignSummary, type MessageStatus } from "@/lib/api";
+import {
+  getCampaigns,
+  type CampaignSummary,
+  type MessageStatus,
+} from "@/lib/api";
 import { springIn, stagger } from "@/lib/motion";
 import { Button, Card, ChannelPill, Eyebrow } from "@/components/ui";
 
@@ -12,7 +18,8 @@ const safeNum = (v: unknown) =>
   typeof v === "number" && Number.isFinite(v) ? v : 0;
 const ratePct = (v: unknown) =>
   typeof v === "number" && Number.isFinite(v) ? `${v}%` : "0%";
-const rupees = (n: number) => `Rs ${Math.round(safeNum(n)).toLocaleString("en-IN")}`;
+const rupees = (n: number) =>
+  `Rs ${Math.round(safeNum(n)).toLocaleString("en-IN")}`;
 const formatDate = (iso: string) => {
   const d = new Date(iso);
   return Number.isNaN(d.getTime())
@@ -24,7 +31,11 @@ const formatDate = (iso: string) => {
       });
 };
 
-const FUNNEL: { key: keyof CampaignSummary; label: string; status: MessageStatus }[] = [
+const FUNNEL: {
+  key: keyof CampaignSummary;
+  label: string;
+  status: MessageStatus;
+}[] = [
   { key: "sent", label: "sent", status: "sent" },
   { key: "delivered", label: "delivered", status: "delivered" },
   { key: "opened", label: "opened", status: "opened" },
@@ -83,7 +94,9 @@ export default function CampaignsPage() {
 
       {status === "error" && (
         <Card className="flex flex-col items-start gap-3">
-          <Eyebrow className="text-failed">Couldn&apos;t load campaigns</Eyebrow>
+          <Eyebrow className="text-failed">
+            Couldn&apos;t load campaigns
+          </Eyebrow>
           <p className="text-ink">
             Loop couldn&apos;t reach the campaign history. Check the backend,
             then try again.

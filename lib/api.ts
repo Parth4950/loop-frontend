@@ -73,8 +73,10 @@ export interface Plan {
   confidence: number;
   /** The agent's rationale for the plan. */
   reason?: string;
-  /** The crafted message copy. */
+  /** The crafted message copy, with personalization tokens like {name}. */
   message: string;
+  /** The message rendered for one real recipient — a personalization preview. */
+  message_preview?: string;
   /** Draft subject (email) — omitted for SMS / WhatsApp. */
   subject?: string;
   /** The SQL the agent compiled to resolve the audience. */
@@ -83,6 +85,8 @@ export interface Plan {
   segment_filters?: Record<string, unknown>;
   /** Projected reach / opens / clicks for the chosen channel. */
   projected: Projection;
+  /** Projected performance per channel — drives the channel comparison. */
+  channel_comparison?: Partial<Record<Channel, Projection>>;
   explainability: Explainability;
   /** A handful of representative customers from the audience. */
   audience_sample?: AudienceMember[];
@@ -283,7 +287,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: { "Content-Type": "application/json", ...init?.headers },
   });
-  if (!res.ok) throw new Error(`${init?.method ?? "GET"} ${path} failed (${res.status})`);
+  if (!res.ok)
+    throw new Error(`${init?.method ?? "GET"} ${path} failed (${res.status})`);
   return res.json() as Promise<T>;
 }
 
@@ -303,12 +308,17 @@ export function explainCustomer(
 }
 
 /** Launch an approved campaign. */
-export function sendCampaign(id: string): Promise<{ id: string; status: "launched" }> {
+export function sendCampaign(
+  id: string,
+): Promise<{ id: string; status: "launched" }> {
   return request(`/campaigns/${id}/send`, { method: "POST" });
 }
 
 /** Dry-run a send for an audience on a channel to preview its projection. */
-export function simulate(audienceSize: number, channel: Channel): Promise<Projection> {
+export function simulate(
+  audienceSize: number,
+  channel: Channel,
+): Promise<Projection> {
   return request(`/agent/simulate`, {
     method: "POST",
     body: JSON.stringify({ segment_size: audienceSize, channel }),

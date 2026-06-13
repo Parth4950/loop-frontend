@@ -1,5 +1,7 @@
 "use client";
 
+/** Top-bar navigation, highlighting the active route via the current pathname. */
+
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -16,9 +18,7 @@ export function NavLinks() {
     <nav className="flex items-center gap-1">
       {LINKS.map((link) => {
         const active =
-          link.href === "/"
-            ? pathname === "/"
-            : pathname.startsWith(link.href);
+          link.href === "/" ? pathname === "/" : pathname.startsWith(link.href);
         return (
           <Link
             key={link.href}

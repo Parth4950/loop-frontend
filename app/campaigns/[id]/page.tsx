@@ -1,5 +1,7 @@
 "use client";
 
+/** Live campaign tracker — SSE-driven funnel, message stream, intervention, analysis. */
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import {
@@ -55,7 +57,13 @@ const LADDER: MessageStatus[] = [
 
 type Stats = {
   tiles: Record<
-    "sent" | "delivered" | "read" | "opened" | "clicked" | "converted" | "failed",
+    | "sent"
+    | "delivered"
+    | "read"
+    | "opened"
+    | "clicked"
+    | "converted"
+    | "failed",
     number
   >;
   dist: Record<MessageStatus, number>;
@@ -89,7 +97,15 @@ function deriveStats(messages: Message[]): Stats {
   const denom = delivered || 1;
 
   return {
-    tiles: { sent, delivered, read, opened, clicked, converted, failed: dist.failed },
+    tiles: {
+      sent,
+      delivered,
+      read,
+      opened,
+      clicked,
+      converted,
+      failed: dist.failed,
+    },
     dist,
     total: messages.length,
     openRate: opened / denom,
@@ -114,6 +130,8 @@ export default function CampaignPage() {
 
   const stats = useMemo(() => deriveStats(messages), [messages]);
 
+  // Subscribe to the campaign's live SSE feed for the tab's lifetime; the
+  // cleanup closes the EventSource so we don't leak a connection.
   useEffect(() => {
     if (!id) return;
 
@@ -123,9 +141,7 @@ export default function CampaignPage() {
         if (event.channel) setChannel(event.channel);
         if (event.messages) {
           setMessages(event.messages);
-          setVersions(
-            Object.fromEntries(event.messages.map((m) => [m.id, 0])),
-          );
+          setVersions(Object.fromEntries(event.messages.map((m) => [m.id, 0])));
         }
         setLive(true);
       } else if (event.type === "update" && event.message_id) {
@@ -454,7 +470,9 @@ function MessageRow({
         className="pointer-events-none absolute inset-0 bg-live/12"
       />
       <div className="relative flex items-center justify-between gap-4 px-5 py-3">
-        <span className="truncate text-sm text-ink">{message.customer_name}</span>
+        <span className="truncate text-sm text-ink">
+          {message.customer_name}
+        </span>
         <div className="flex items-center gap-3">
           {message.at && (
             <time className="font-mono text-[11px] tabular-nums text-muted">
@@ -550,7 +568,10 @@ function InsightCard({ insight }: { insight: Insight }) {
         <div className="grid grid-cols-3 gap-4 border-y border-line py-5">
           <MiniStat label="Open rate" value={ratePct(insight.open_rate)} />
           <MiniStat label="Click rate" value={ratePct(insight.click_rate)} />
-          <MiniStat label="Conversion" value={ratePct(insight.conversion_rate)} />
+          <MiniStat
+            label="Conversion"
+            value={ratePct(insight.conversion_rate)}
+          />
         </div>
 
         <div className="flex flex-wrap gap-x-4 gap-y-1.5 font-mono text-[11px] text-muted">
@@ -565,9 +586,21 @@ function InsightCard({ insight }: { insight: Insight }) {
         </div>
 
         <div className="flex flex-col gap-4">
-          <Readout label="What worked" tone="clicked" text={safeText(insight.what_worked)} />
-          <Readout label="What didn't" tone="failed" text={safeText(insight.what_didnt)} />
-          <Readout label="Next step" tone="live" text={safeText(insight.next_step)} />
+          <Readout
+            label="What worked"
+            tone="clicked"
+            text={safeText(insight.what_worked)}
+          />
+          <Readout
+            label="What didn't"
+            tone="failed"
+            text={safeText(insight.what_didnt)}
+          />
+          <Readout
+            label="Next step"
+            tone="live"
+            text={safeText(insight.next_step)}
+          />
         </div>
       </Card>
     </motion.div>

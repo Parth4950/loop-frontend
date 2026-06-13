@@ -1,3 +1,5 @@
+/** Shared framer-motion variants so motion across the app reads as one hand. */
+
 import type { Transition, Variants } from "framer-motion";
 
 /** One spring, used everywhere so motion feels like a single hand. */
