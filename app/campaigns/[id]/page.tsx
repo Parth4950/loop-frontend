@@ -142,6 +142,19 @@ export default function CampaignPage() {
     if (!id) return;
 
     const source = openCampaignStream(id, (event) => {
+      // Branch on event shape. A recommendation drives the mid-campaign banner.
+      if (event.type === "recommendation") {
+        if (event.suggested_channel) {
+          setRecommendation({
+            text:
+              event.text ?? "Consider switching channels to lift engagement.",
+            suggested_channel: event.suggested_channel,
+          });
+        }
+        return;
+      }
+
+      // The initial snapshot seeds the message list.
       if (event.type === "snapshot") {
         if (event.campaign_name) setName(event.campaign_name);
         if (event.channel) setChannel(event.channel);
@@ -150,7 +163,12 @@ export default function CampaignPage() {
           setVersions(Object.fromEntries(event.messages.map((m) => [m.id, 0])));
         }
         setLive(true);
-      } else if (event.type === "update" && event.message_id) {
+        return;
+      }
+
+      // Everything else is a per-message update, keyed by message_id. The tiles
+      // and rates recompute from the message list, so updating it is enough.
+      if (event.message_id) {
         const mid = event.message_id;
         setMessages((prev) => {
           const at = event.at ?? new Date().toISOString();
@@ -176,11 +194,7 @@ export default function CampaignPage() {
           return next;
         });
         setVersions((v) => ({ ...v, [mid]: (v[mid] ?? 0) + 1 }));
-      } else if (event.type === "recommendation" && event.suggested_channel) {
-        setRecommendation({
-          text: event.text ?? "Consider switching channels to lift engagement.",
-          suggested_channel: event.suggested_channel,
-        });
+        setLive(true);
       }
     });
 

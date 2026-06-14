@@ -209,7 +209,8 @@ export interface CampaignEvent {
   /** e.g. "email.opened" — what the customer did. */
   event_type?: string;
 
-  /* recommendation — the agent proposes an intervention */
+  /* recommendation — the agent proposes a mid-campaign channel switch */
+  campaign_id?: string;
   text?: string;
   suggested_channel?: Channel;
 
